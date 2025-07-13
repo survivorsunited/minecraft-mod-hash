@@ -63,8 +63,10 @@ jobs:
               console.log(`Tag creation failed: ${error.message}`);
             }
 
-      - name: Upload dist as artifact
-        uses: actions/upload-artifact@v4
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: release-${{ steps.get_tag.outputs.tag }}
-          path: ./dist 
+          tag_name: ${{ steps.get_tag.outputs.tag }}
+          name: ${{ steps.get_tag.outputs.tag }}
+          files: ./dist/*
+          generate_release_notes: true 
