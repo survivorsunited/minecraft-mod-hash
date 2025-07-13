@@ -1,0 +1,70 @@
+name: CI & Release
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+
+      - name: Run all test scripts
+        shell: pwsh
+        run: |
+          ./run-tests.ps1
+
+  release:
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    runs-on: windows-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # PowerShell Core is already available on Windows runners
+
+      - name: Run release build
+        shell: pwsh
+        run: |
+          ./hash.ps1 -UpdateConfig -CreateZip -OutputPath ./dist -ModsPath ./tests/mods
+
+      - name: Get release tag from output
+        id: get_tag
+        shell: pwsh
+        run: |
+          $file = Get-ChildItem -Path ./dist -Filter 'client-mod-all-*-hash.txt' | Select-Object -First 1
+          if (-not $file) { throw 'No hash.txt found in dist' }
+          $tag = $file.Name -replace '-hash\.txt$', ''
+          echo "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Create git tag
+        continue-on-error: true
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const tag = '${{ steps.get_tag.outputs.tag }}';
+            try {
+              await github.rest.git.createRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: `refs/tags/${tag}`,
+                sha: context.sha
+              });
+              console.log(`Created tag: ${tag}`);
+            } catch (error) {
+              console.log(`Tag creation failed: ${error.message}`);
+            }
+
+      - name: Upload dist as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ steps.get_tag.outputs.tag }}
+          path: ./dist 

@@ -1,0 +1,10 @@
+*.jar
+*.ini
+hash.txt
+README-MOD.md
+*.backup*
+*.zip*
+dist/
+tests/output/
+tests/temp/
+CLAUDE.md

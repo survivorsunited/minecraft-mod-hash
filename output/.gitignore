@@ -1,0 +1,6 @@
+*.zip.*
+*.txt
+*.md
+*.toml
+# ignore all folders
+*/

@@ -1,0 +1,79 @@
+# IMPORTANT!
+# Please check https://github.com/DiffuseHyperion/InertiaAntiCheat/wiki/Modern-(Version-1.0.0-and-above) on how to configure this mod.
+# You will likely need https://iac.diffusehyperion.com/ in the process of configuring this mod.
+
+[transfer]
+# The method clients should use in transfering their modlist to the server.
+# "data" will have clients send the entirety of each file in their modlist. This is the most secure.
+# "name" will have clients send the name of each file in their modlist. This is significantly faster.
+# Use "name" if you are using large modpacks to make login times reasonable.
+# Accepted types: "data", "name"
+method = "data"
+
+[validation]
+# The method to check client's mod list.
+# If you prefer blacklisting/whitelisting certain mods from being used, use "individual".
+# If you prefer ensuring client's have a modpack installed, use "group".
+# Accepted types: "individual", "group"
+method = "individual"
+# The hashing algorithm for the mod to use.
+# MD5 is the fastest but most insecure.
+# SHA256 is the slowest but most secure.
+# Accepted algorithms: "MD5", "SHA1", "SHA256"
+algorithm = "MD5"
+# The kick message to show to clients when they try to connect without InertiaAntiCheat installed.
+vanillaKickMessage = "You were kicked for not sending a response to the anti-cheat!\nThis is probably due to missing the anti-cheat client mod.\nInstall it here: https://modrinth.com/mod/inertiaanticheat"
+# The kick message to show to clients when they fail the modlist check.
+deniedKickMessage = "You were kicked by the anti-cheat!\nThis is due to having illegal mods.\nPlease contact your server administrator for more details."
+
+[validation.individual]
+# Immediately kick players who have these mods in their modlist.
+# The mod checks (and kicks) for blacklisted mods first.
+# If you are using the "data" transfer method, refer to https://iac.diffusehyperion.com
+# If you are using the "name" transfer method, add the names of each file you want to blacklist.
+# The file extension ".jar" will be automatically added if it is not already included.
+blacklist = []
+# Immediately kick players who do not have these mods in their modlist.
+# If you are using the "data" transfer method, refer to https://iac.diffusehyperion.com
+# If you are using the "name" transfer method, add the names of each file you want to whitelist.
+# The file extension ".jar" will be automatically added if it is not already included.
+whitelist = []
+
+
+[validation.group]
+# The hash for the server to check against.
+# You can add multiple hashes into the list, and the server will check against all of them.
+hash = []
+# Allow certain mods to be used by players, in addition to your modpack.
+# This allows players to make use of optional client mods if you allow it.
+# If you are using the "data" transfer method, refer to https://iac.diffusehyperion.com
+# If you are using the "name" transfer method, add the names of each file you want to soft-whitelist.
+# The file extension ".jar" will be automatically added if it is not already included.
+softWhitelist = []
+
+[motd]
+# Whether to show an icon on client's server list indicating that InertiaAntiCheat is installed.
+showInstalled = true
+# The names of blacklisted mods to report to clients.
+# Clients will be able to see these mod names in their server browser.
+# You may choose to put arbituary names, extra names, fake names or no names at all here.
+# Setting this to be an empty list will cause the icon to not show up.
+blacklist = ["Banned mods: ", "None"]
+# The names of whitelisted mods to report to clients.
+# Clients will be able to see these mod names in their server browser.
+# You may choose to put arbituary names, fake names or no names at all here.
+# Setting this to be an empty list will cause the icon to not show up.
+#whitelist = ["Whitelisted mods: ", "None"]
+whitelist = ["Whitelisted mods:", "None"]
+
+
+# The name of the modpack to report to clients.
+# Clients will be able to see the modpack name in their server browser.
+# Setting this to be an empty list will cause the icon to not show up.
+hash = ["Requires modpack: ", "Modpack Name"]
+
+[debug]
+# Show additional information in server logs.
+debug = false
+# do not touch pls :)
+version = 8
