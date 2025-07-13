@@ -40,9 +40,9 @@ jobs:
         id: get_tag
         shell: pwsh
         run: |
-          $file = Get-ChildItem -Path ./dist -Filter 'client-mod-all-*-hash.txt' | Select-Object -First 1
-          if (-not $file) { throw 'No hash.txt found in dist' }
-          $tag = $file.Name -replace '-hash\.txt$', ''
+          $versionDir = Get-ChildItem -Path ./dist -Directory | Select-Object -First 1
+          if (-not $versionDir) { throw 'No version directory found in dist' }
+          $tag = $versionDir.Name
           echo "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
       - name: Create git tag
@@ -68,5 +68,5 @@ jobs:
         with:
           tag_name: ${{ steps.get_tag.outputs.tag }}
           name: ${{ steps.get_tag.outputs.tag }}
-          files: ./dist/*
+          files: ./dist/${{ steps.get_tag.outputs.tag }}/*
           generate_release_notes: true 
