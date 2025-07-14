@@ -33,8 +33,8 @@ $zipFile = Join-Path $versionedDir "modpack.zip"
 if (-not (Test-Path $zipFile)) { Write-Error "modpack.zip not found in version directory"; exit 1 }
 
 # Check for config file (should be in root output directory with timestamped name)
-$configFile = Get-ChildItem "$TestOut" -Filter "*-InertiaAntiCheat.toml" | Select-Object -First 1
-if (-not $configFile) { Write-Error "Config file not found"; exit 1 }
+$configFile = Get-ChildItem "$versionedDir" -Filter "InertiaAntiCheat.toml" | Select-Object -First 1
+if (-not $configFile) { Write-Error "Config file not found at $versionedDir"; exit 1 }
 
 # Verify custom messages in config
 $configContent = Get-Content $configFile.FullName -Raw
