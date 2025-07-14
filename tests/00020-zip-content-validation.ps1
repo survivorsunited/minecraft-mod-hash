@@ -44,26 +44,30 @@ foreach ($mod in $testMods) {
 & "../hash.ps1" -CreateZip -ModsPath $testModsPath -OutputPath $TestOut *> "$TestOut/test.log"
 
 # Assertions
-$hashFile = Get-ChildItem "$TestOut" -Filter "client-mod-all-*-hash.txt" | Select-Object -First 1
-if (-not $hashFile) { Write-Error "hash.txt not found"; exit 1 }
-$readmeFile = Get-ChildItem "$TestOut" -Filter "client-mod-all-*-README.md" | Select-Object -First 1
-if (-not $readmeFile) { Write-Error "README.md not found"; exit 1 }
+# Find the version directory (pattern: YYYY.M.D-HHMMSS)
+$versionDir = Get-ChildItem "$TestOut" -Directory | Where-Object { $_.Name -match '^\d{4}\.\d{1,2}\.\d{1,2}-\d{6}$' } | Select-Object -First 1
+if (-not $versionDir) { Write-Error "Version directory not found"; exit 1 }
+
+$hashFile = Join-Path $versionDir.FullName "hash.txt"
+if (-not (Test-Path $hashFile)) { Write-Error "hash.txt not found in version directory"; exit 1 }
+$readmeFile = Join-Path $versionDir.FullName "README.md"
+if (-not (Test-Path $readmeFile)) { Write-Error "README.md not found in version directory"; exit 1 }
 
 # Find the zip file
-$zipFile = Get-ChildItem "$TestOut" -Filter "client-mod-all-*.zip" | Select-Object -First 1
-if (-not $zipFile) { Write-Error "mods zip file not found"; exit 1 }
+$zipFile = Join-Path $versionDir.FullName "modpack.zip"
+if (-not (Test-Path $zipFile)) { Write-Error "modpack.zip not found in version directory"; exit 1 }
 
 # Verify signature files exist
-if (-not (Test-Path "$TestOut/$($zipFile.Name).md5")) { Write-Error "MD5 signature file not found"; exit 1 }
-if (-not (Test-Path "$TestOut/$($zipFile.Name).sha1")) { Write-Error "SHA1 signature file not found"; exit 1 }
-if (-not (Test-Path "$TestOut/$($zipFile.Name).sha256")) { Write-Error "SHA256 signature file not found"; exit 1 }
-if (-not (Test-Path "$TestOut/$($zipFile.Name).sha512")) { Write-Error "SHA512 signature file not found"; exit 1 }
+if (-not (Test-Path "$zipFile.md5")) { Write-Error "MD5 signature file not found"; exit 1 }
+if (-not (Test-Path "$zipFile.sha1")) { Write-Error "SHA1 signature file not found"; exit 1 }
+if (-not (Test-Path "$zipFile.sha256")) { Write-Error "SHA256 signature file not found"; exit 1 }
+if (-not (Test-Path "$zipFile.sha512")) { Write-Error "SHA512 signature file not found"; exit 1 }
 
 # Extract and validate zip contents
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $tempExtractDir = Join-Path "./temp" ([System.Guid]::NewGuid().ToString())
 if (-not (Test-Path "./temp")) { New-Item -ItemType Directory -Path "./temp" -Force | Out-Null }
-[System.IO.Compression.ZipFile]::ExtractToDirectory($zipFile.FullName, $tempExtractDir)
+[System.IO.Compression.ZipFile]::ExtractToDirectory($zipFile, $tempExtractDir)
 
 try {
     # Verify ZIP contains JAR files

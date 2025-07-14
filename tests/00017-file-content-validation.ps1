@@ -36,13 +36,17 @@ Remove-Item -Path $tempDir -Recurse -Force
 & "../hash.ps1" -ModsPath $testModsPath -OutputPath $TestOut *> "$TestOut/test.log"
 
 # Assertions
-$hashFile = Get-ChildItem "$TestOut" -Filter "client-mod-all-*-hash.txt" | Select-Object -First 1
-if (-not $hashFile) { Write-Error "hash.txt not found"; exit 1 }
-$readmeFile = Get-ChildItem "$TestOut" -Filter "client-mod-all-*-README.md" | Select-Object -First 1
-if (-not $readmeFile) { Write-Error "README.md not found"; exit 1 }
+# Find the version directory (pattern: YYYY.M.D-HHMMSS)
+$versionDir = Get-ChildItem "$TestOut" -Directory | Where-Object { $_.Name -match '^\d{4}\.\d{1,2}\.\d{1,2}-\d{6}$' } | Select-Object -First 1
+if (-not $versionDir) { Write-Error "Version directory not found"; exit 1 }
+
+$hashFile = Join-Path $versionDir.FullName "hash.txt"
+if (-not (Test-Path $hashFile)) { Write-Error "hash.txt not found in version directory"; exit 1 }
+$readmeFile = Join-Path $versionDir.FullName "README.md"
+if (-not (Test-Path $readmeFile)) { Write-Error "README.md not found in version directory"; exit 1 }
 
 # Validate hash.txt content structure
-$hashContent = Get-Content $hashFile.FullName
+$hashContent = Get-Content $hashFile
 
 # Check for required sections
 $mandatorySectionFound = $false
@@ -64,7 +68,7 @@ $hashLines = $hashContent | Where-Object { $_ -match "^[a-f0-9]{32} " }
 if ($hashLines.Count -eq 0) { Write-Error "No valid hash lines found in hash file"; exit 1 }
 
 # Validate README.md content structure
-$readmeContent = Get-Content $readmeFile.FullName -Raw
+$readmeContent = Get-Content $readmeFile -Raw
 
 if ($readmeContent -notmatch "# Minecraft Modpack Documentation") { Write-Error "README missing main title"; exit 1 }
 if ($readmeContent -notmatch "## Summary") { Write-Error "README missing summary section"; exit 1 }

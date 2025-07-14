@@ -11,17 +11,21 @@ if (-not (Test-Path $TestOut)) { New-Item -ItemType Directory -Path $TestOut | O
 & "../hash.ps1" -CreateZip -UpdateConfig -ModsPath "../mods" -OutputPath $TestOut -MotdMessage "Custom MOTD:" -ModpackMessage "Custom Modpack:" -BannedModsMessage "Custom Banned:" *> "$TestOut/test.log"
 
 # Assertions
-$hashFile = Get-ChildItem "$TestOut" -Filter "client-mod-all-*-hash.txt" | Select-Object -First 1
-if (-not $hashFile) { Write-Error "hash.txt not found"; exit 1 }
-$readmeFile = Get-ChildItem "$TestOut" -Filter "client-mod-all-*-README.md" | Select-Object -First 1
-if (-not $readmeFile) { Write-Error "README.md not found"; exit 1 }
+# Find the version directory (pattern: YYYY.M.D-HHMMSS)
+$versionDir = Get-ChildItem "$TestOut" -Directory | Where-Object { $_.Name -match '^\d{4}\.\d{1,2}\.\d{1,2}-\d{6}$' } | Select-Object -First 1
+if (-not $versionDir) { Write-Error "Version directory not found"; exit 1 }
+
+$hashFile = Join-Path $versionDir.FullName "hash.txt"
+if (-not (Test-Path $hashFile)) { Write-Error "hash.txt not found in version directory"; exit 1 }
+$readmeFile = Join-Path $versionDir.FullName "README.md"
+if (-not (Test-Path $readmeFile)) { Write-Error "README.md not found in version directory"; exit 1 }
 
 # Check for ZIP file
-$zipFile = Get-ChildItem "$TestOut" -Filter "client-mod-all-*.zip" | Select-Object -First 1
-if (-not $zipFile) { Write-Error "ZIP file not found"; exit 1 }
+$zipFile = Join-Path $versionDir.FullName "modpack.zip"
+if (-not (Test-Path $zipFile)) { Write-Error "modpack.zip not found in version directory"; exit 1 }
 
-# Check for config file
-$configFile = Get-ChildItem "$TestOut" -Filter "client-mod-all-*-InertiaAntiCheat.toml" | Select-Object -First 1
+# Check for config file (should be in root output directory with timestamped name)
+$configFile = Get-ChildItem "$TestOut" -Filter "*-InertiaAntiCheat.toml" | Select-Object -First 1
 if (-not $configFile) { Write-Error "Config file not found"; exit 1 }
 
 # Verify custom messages in config
