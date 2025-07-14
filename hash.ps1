@@ -725,14 +725,9 @@ $combinedHashBytes = $md5.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($com
 $combinedHash = [System.BitConverter]::ToString($combinedHashBytes).Replace("-", "").ToLower()
 $md5.Dispose()
 
-# Generate clean version folder and filenames
-$releaseVersion = Get-Date -Format "yyyy.M.d-HHmmss"
-$releaseFolder = Join-Path $OutputPath $releaseVersion
-if (-not (Test-Path $releaseFolder)) {
-    New-Item -ItemType Directory -Path $releaseFolder -Force | Out-Null
-}
-$actualOutputPath = $releaseFolder
-Write-Host "Creating version $releaseVersion" -ForegroundColor Green
+# Use the provided output path directly
+$actualOutputPath = $OutputPath
+Write-Host "Writing files to output directory" -ForegroundColor Green
 
 Write-Host "Combined hash (from mandatory mods only): $combinedHash" -ForegroundColor Cyan
 
@@ -870,6 +865,11 @@ $readmeContent | Out-File -FilePath (Join-Path $actualOutputPath $readmeFileName
 # Update IAC config if requested
 if ($UpdateConfig) {
     Write-Host "`nUpdating InertiaAntiCheat config..." -ForegroundColor Yellow
+    Write-Host "Using config from $ConfigPath..." -ForegroundColor Yellow
+    $iacCopyName = Get-ChildItem -Path $ConfigPath -Name
+    $iacCopyPath = Join-Path $OutputPath $iacCopyName
+    Write-Host "Copying config to $iacCopyPath..." -ForegroundColor Yellow
+
     # Create minimal config if it does not exist
     if (-not (Test-Path $ConfigPath)) {
         $defaultConfig = @(
@@ -905,8 +905,6 @@ if ($UpdateConfig) {
     }
     
     # Copy the original config to the output file, then update only the output file
-    $iacCopyName = "$filePrefix-InertiaAntiCheat.toml"
-    $iacCopyPath = Join-Path $OutputPath $iacCopyName
     Get-Content -Path $ConfigPath | Set-Content -Path $iacCopyPath
     Update-IACConfig -ConfigPath $iacCopyPath -CombinedHash $combinedHash -SoftWhitelist $softWhitelistHashes -AllModNames $motdWhitelist -RequiredModNames $requiredModNames -OptionalModNames $optionalModNames -BlockedMods $blockedMods -BlockedModNames $blockedModNames -MotdMessage $MotdMessage -ModpackMessage $ModpackMessage -BannedModsMessage $BannedModsMessage
 }
