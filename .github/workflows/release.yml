@@ -32,17 +32,19 @@ jobs:
       # PowerShell Core is already available on Windows runners
 
       - name: Run release build
+        id: release_build
         shell: pwsh
         run: |
-          ./hash.ps1 -UpdateConfig -CreateZip -OutputPath ./dist -ModsPath ./tests/mods
-
-      - name: Get release tag from output
-        id: get_tag
-        shell: pwsh
-        run: |
-          $versionDir = Get-ChildItem -Path ./dist -Directory | Select-Object -First 1
-          if (-not $versionDir) { throw 'No version directory found in dist' }
-          $tag = $versionDir.Name
+          # Generate clean version folder and filenames
+          $releaseVersion = Get-Date -Format "yyyy.M.d-HHmmss"
+          $releaseFolder = Join-Path "./dist" $releaseVersion
+          if (-not (Test-Path $releaseFolder)) {
+              New-Item -ItemType Directory -Path $releaseFolder -Force | Out-Null
+          }
+          Write-Host "Creating version $releaseVersion" -ForegroundColor Green
+          ./hash.ps1 -UpdateConfig -CreateZip -OutputPath "$releaseFolder" -ModsPath ./tests/mods
+          # Set the tag to the release version
+          $tag = $releaseVersion
           echo "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
       - name: Create git tag
@@ -50,7 +52,7 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const tag = '${{ steps.get_tag.outputs.tag }}';
+            const tag = '${{ steps.release_build.outputs.tag }}';
             try {
               await github.rest.git.createRef({
                 owner: context.repo.owner,
@@ -66,7 +68,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.get_tag.outputs.tag }}
-          name: ${{ steps.get_tag.outputs.tag }}
-          files: ./dist/${{ steps.get_tag.outputs.tag }}/*
+          tag_name: ${{ steps.release_build.outputs.tag }}
+          name: ${{ steps.release_build.outputs.tag }}
+          files: ./dist/${{ steps.release_build.outputs.tag }}/*
           generate_release_notes: true 
