@@ -447,30 +447,50 @@ function Create-ModsZip {
         if (-not (Test-Path $tempBase)) { New-Item -ItemType Directory -Path $tempBase -Force | Out-Null }
         $tempDir = Join-Path $tempBase ([System.Guid]::NewGuid().ToString())
         New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
-        
-        # Copy all mandatory mods to temp directory
+
+        # Build folder structure: mods/, mods/optional/, shaderpacks/
+        $tempModsDir = Join-Path $tempDir 'mods'
+        $tempModsOptionalDir = Join-Path $tempModsDir 'optional'
+        $tempShaderpacksDir = Join-Path $tempDir 'shaderpacks'
+        New-Item -ItemType Directory -Path $tempModsDir -Force | Out-Null
+        New-Item -ItemType Directory -Path $tempModsOptionalDir -Force | Out-Null
+        New-Item -ItemType Directory -Path $tempShaderpacksDir -Force | Out-Null
+
+        # Copy all mandatory mods under mods/
         Write-Host "  Adding mandatory mods..." -ForegroundColor Gray
         foreach ($mod in $MandatoryMods) {
             $sourcePath = Join-Path $ModsPath $mod.JarFileName
             if (Test-Path $sourcePath) {
-                Copy-Item $sourcePath $tempDir
+                Copy-Item $sourcePath $tempModsDir
                 Write-Host "    Added: $($mod.Name)" -ForegroundColor Gray
             } else {
                 Write-Host "    Warning: Could not find JAR file: $($mod.JarFileName) for $($mod.Name)" -ForegroundColor Yellow
             }
         }
-        
-        # Copy all optional mods to temp directory
+
+        # Copy all optional mods under mods/optional/
         if ($SoftWhitelistedMods.Count -gt 0) {
             Write-Host "  Adding optional mods..." -ForegroundColor Gray
             foreach ($mod in $SoftWhitelistedMods) {
                 $sourcePath = Join-Path $ModsPath\optional $mod.JarFileName
                 if (Test-Path $sourcePath) {
-                    Copy-Item $sourcePath $tempDir
+                    Copy-Item $sourcePath $tempModsOptionalDir
                     Write-Host "    Added: $($mod.Name)" -ForegroundColor Gray
                 } else {
                     Write-Host "    Warning: Could not find JAR file: $($mod.JarFileName) for $($mod.Name)" -ForegroundColor Yellow
                 }
+            }
+        }
+
+        # Copy shaderpacks (if a sibling shaderpacks/ exists next to ModsPath)
+        $modsParent = Split-Path -Parent $ModsPath
+        $shaderpacksPath = Join-Path $modsParent 'shaderpacks'
+        if (Test-Path $shaderpacksPath) {
+            Write-Host "  Adding shaderpacks..." -ForegroundColor Gray
+            $shaderFiles = Get-ChildItem -Path $shaderpacksPath -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -in @('.zip','.jar') }
+            foreach ($sp in $shaderFiles) {
+                Copy-Item $sp.FullName -Destination (Join-Path $tempShaderpacksDir $sp.Name)
+                Write-Host "    Added: $($sp.Name)" -ForegroundColor Gray
             }
         }
         
@@ -484,7 +504,7 @@ function Create-ModsZip {
         $zipReadmeContent += ""
         $zipReadmeContent += "## Package Contents"
         $zipReadmeContent += ""
-        $zipReadmeContent += "This package contains all mods required for the Minecraft server:"
+        $zipReadmeContent += "This package contains the modpack with expected folder structure (mods/, shaderpacks/):"
         $zipReadmeContent += ""
         $zipReadmeContent += "### Mandatory Mods ($($MandatoryMods.Count))"
         foreach ($mod in $MandatoryMods) {
@@ -510,9 +530,11 @@ function Create-ModsZip {
         $zipReadmeContent += ""
         $zipReadmeContent += "## Installation Instructions"
         $zipReadmeContent += ""
-        $zipReadmeContent += "1. Extract all JAR files from this zip to your `.minecraft/mods` folder"
-        $zipReadmeContent += "2. Ensure you have Fabric Loader installed for Minecraft 1.21.5"
-        $zipReadmeContent += "3. Start Minecraft and join the server"
+        $zipReadmeContent += "1. Extract the contents of this zip."
+        $zipReadmeContent += "2. Copy the 'mods' folder into your `.minecraft/` folder (preserving the 'optional' subfolder)."
+        $zipReadmeContent += "3. If you use shaders, copy the 'shaderpacks' folder into your `.minecraft/` folder."
+        $zipReadmeContent += "4. Ensure you have the correct loader installed (e.g., Fabric) for your Minecraft version."
+        $zipReadmeContent += "5. Start Minecraft and join the server."
         $zipReadmeContent += ""
         $zipReadmeContent += "## Package Verification"
         $zipReadmeContent += ""
