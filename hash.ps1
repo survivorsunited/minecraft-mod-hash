@@ -439,8 +439,9 @@ function Create-ModsZip {
         # Load the ZIP assembly
         Add-Type -AssemblyName System.IO.Compression.FileSystem
         
-        # Create the zip file
-        $zipPath = Join-Path $OutputPath $zipFileName
+        # Create the zip file (use absolute path for reliability)
+        $resolvedOutput = try { (Resolve-Path $OutputPath).ProviderPath } catch { $OutputPath }
+        $zipPath = Join-Path $resolvedOutput $zipFileName
         
         # Create a temporary directory to organize files
         $tempBase = "./tests/temp"
@@ -448,17 +449,21 @@ function Create-ModsZip {
         $tempDir = Join-Path $tempBase ([System.Guid]::NewGuid().ToString())
         New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
 
-        # Build folder structure: mods/, mods/optional/, shaderpacks/, datapacks/, install/
+        # Build folder structure: mods/, mods/optional/, mods/server/, shaderpacks/, datapacks/, install/, config/InertiaAntiCheat/
         $tempModsDir = Join-Path $tempDir 'mods'
         $tempModsOptionalDir = Join-Path $tempModsDir 'optional'
+        $tempModsServerDir = Join-Path $tempModsDir 'server'
         $tempShaderpacksDir = Join-Path $tempDir 'shaderpacks'
         $tempDatapacksDir = Join-Path $tempDir 'datapacks'
         $tempInstallDir = Join-Path $tempDir 'install'
+        $tempIacConfigDir = Join-Path $tempDir 'config\InertiaAntiCheat'
         New-Item -ItemType Directory -Path $tempModsDir -Force | Out-Null
         New-Item -ItemType Directory -Path $tempModsOptionalDir -Force | Out-Null
+        New-Item -ItemType Directory -Path $tempModsServerDir -Force | Out-Null
         New-Item -ItemType Directory -Path $tempShaderpacksDir -Force | Out-Null
         New-Item -ItemType Directory -Path $tempDatapacksDir -Force | Out-Null
         New-Item -ItemType Directory -Path $tempInstallDir -Force | Out-Null
+        New-Item -ItemType Directory -Path $tempIacConfigDir -Force | Out-Null
 
         # Copy all mandatory mods under mods/
         Write-Host "  Adding mandatory mods..." -ForegroundColor Gray
@@ -483,6 +488,17 @@ function Create-ModsZip {
                 } else {
                     Write-Host "    Warning: Could not find JAR file: $($mod.JarFileName) for $($mod.Name)" -ForegroundColor Yellow
                 }
+            }
+        }
+
+        # Copy server-only mods under mods/server/
+        $modsServerPath = Join-Path $ModsPath 'server'
+        if (Test-Path $modsServerPath) {
+            Write-Host "  Adding server-only mods..." -ForegroundColor Gray
+            $serverJars = Get-ChildItem -Path $modsServerPath -Filter '*.jar' -File -ErrorAction SilentlyContinue
+            foreach ($sj in $serverJars) {
+                Copy-Item -Path $sj.FullName -Destination (Join-Path $tempModsServerDir $sj.Name)
+                Write-Host "    Added: $($sj.Name)" -ForegroundColor Gray
             }
         }
 
@@ -521,6 +537,25 @@ function Create-ModsZip {
             }
         }
 
+        # Copy server jars to ZIP root (if present alongside ModsPath)
+        $minecraftServerJar = Get-ChildItem -Path $modsParent -Filter 'minecraft_server*.jar' -File -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($minecraftServerJar) {
+            Copy-Item -Path $minecraftServerJar.FullName -Destination (Join-Path $tempDir $minecraftServerJar.Name)
+            Write-Host "  Added server jar at root: $($minecraftServerJar.Name)" -ForegroundColor Gray
+        }
+        $fabricServerJar = Get-ChildItem -Path $modsParent -Filter 'fabric-server*.jar' -File -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($fabricServerJar) {
+            Copy-Item -Path $fabricServerJar.FullName -Destination (Join-Path $tempDir $fabricServerJar.Name)
+            Write-Host "  Added fabric server launcher at root: $($fabricServerJar.Name)" -ForegroundColor Gray
+        }
+
+        # Include InertiaAntiCheat config inside config/InertiaAntiCheat/ if present next to ModsPath
+        $iacConfig = Join-Path $modsParent 'config\InertiaAntiCheat\InertiaAntiCheat.toml'
+        if (Test-Path $iacConfig) {
+            Copy-Item -Path $iacConfig -Destination (Join-Path $tempIacConfigDir 'InertiaAntiCheat.toml') -Force
+            Write-Host "  Added: config/InertiaAntiCheat/InertiaAntiCheat.toml" -ForegroundColor Gray
+        }
+
         # Warn if any ZIPs are present under mods/ (likely misclassification)
         $modsZips = @()
         $modsZips += (Get-ChildItem -Path $ModsPath -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -eq '.zip' })
@@ -542,7 +577,8 @@ function Create-ModsZip {
         $zipReadmeContent += ""
         $zipReadmeContent += "## Package Contents"
         $zipReadmeContent += ""
-        $zipReadmeContent += "This package contains the modpack with expected folder structure (mods/, shaderpacks/, datapacks/):"
+    $zipReadmeContent += "This package contains the modpack with expected folder structure (mods/, mods/server/, mods/optional/, shaderpacks/, datapacks/, install/)."
+        $zipReadmeContent += "If available, the Minecraft server jar and Fabric server launcher are included at the ZIP root."
         $zipReadmeContent += ""
         $zipReadmeContent += "### Mandatory Mods ($($MandatoryMods.Count))"
         foreach ($mod in $MandatoryMods) {
@@ -564,6 +600,16 @@ function Create-ModsZip {
                 $zipReadmeContent += "- **$($mod.Name)** v$($mod.Version) - $($mod.Description)"
             }
         }
+
+        # List server-only mods if present
+        if (Test-Path $modsServerPath) {
+            $srvList = Get-ChildItem -Path $modsServerPath -Filter '*.jar' -File -ErrorAction SilentlyContinue
+            if ($srvList.Count -gt 0) {
+                $zipReadmeContent += ""
+                $zipReadmeContent += "### Server-only Mods ($($srvList.Count))"
+                foreach ($f in $srvList) { $zipReadmeContent += "- $($f.Name)" }
+            }
+        }
         
         $zipReadmeContent += ""
         $zipReadmeContent += "## Installation Instructions"
@@ -572,8 +618,9 @@ function Create-ModsZip {
         $zipReadmeContent += "2. Copy the 'mods' folder into your `.minecraft/` folder (preserving the 'optional' subfolder)."
         $zipReadmeContent += "3. If you use shaders, copy the 'shaderpacks' folder into your `.minecraft/` folder."
         $zipReadmeContent += "4. If your server/client uses datapacks, copy the 'datapacks' folder into the world folder (or as per your server setup)."
-        $zipReadmeContent += "5. Ensure you have the correct loader installed (e.g., Fabric) for your Minecraft version."
-        $zipReadmeContent += "6. Start Minecraft and join the server."
+        $zipReadmeContent += "5. (Optional) Run the installer found under 'install/' to install the required loader (e.g., Fabric)."
+        $zipReadmeContent += "6. Ensure you have the correct loader installed (e.g., Fabric) for your Minecraft version."
+        $zipReadmeContent += "7. Start Minecraft and join the server."
         $zipReadmeContent += ""
         $zipReadmeContent += "## Package Verification"
         $zipReadmeContent += ""
@@ -749,12 +796,16 @@ if (Test-Path $blockModsPath) {
 # Filter blocked mods by environment
 $blockedMods = $blockedMods | Where-Object { $_.Environment -eq "" -or $_.Environment -eq "*" -or $_.Environment -eq "client" }
 
-# Calculate combined hash from mandatory mods only
-$mandatoryHashes = $mandatoryMods | ForEach-Object { $_.Hash } | Sort-Object
+# Calculate combined hash from mandatory + optional mods (optional are required on client)
+$requiredForHash = @()
+$requiredForHash += $mandatoryMods
+$requiredForHash += $softWhitelistedMods
+$mandatoryHashes = $requiredForHash | ForEach-Object { $_.Hash } | Sort-Object
 $combinedHashString = $mandatoryHashes -join "|"
 
 # Debug information
 Write-Host "Debug: Number of mandatory mods: $($mandatoryMods.Count)" -ForegroundColor Magenta
+Write-Host "Debug: Number of optional mods (treated as required): $($softWhitelistedMods.Count)" -ForegroundColor Magenta
 Write-Host "Debug: Number of hashes collected: $($mandatoryHashes.Count)" -ForegroundColor Magenta
 Write-Host "Debug: Combined string length: $($combinedHashString.Length)" -ForegroundColor Magenta
 if ($mandatoryHashes.Count -ge 3) {
@@ -777,7 +828,7 @@ $md5.Dispose()
 $actualOutputPath = $OutputPath
 Write-Host "Writing files to output directory" -ForegroundColor Green
 
-Write-Host "Combined hash (from mandatory mods only): $combinedHash" -ForegroundColor Cyan
+Write-Host "Combined hash (from mandatory + optional mods): $combinedHash" -ForegroundColor Cyan
 
 # Generate hash.txt
 $hashContent = @()
@@ -881,7 +932,7 @@ $readmeContent += ""
 $readmeContent += "1. Install Fabric Loader for your target Minecraft version"
 $readmeContent += "2. Download all mandatory mods listed above"
 $readmeContent += "3. Place all mandatory mod JAR files in your `.minecraft/mods` folder"
-$readmeContent += "4. Copy optional mods (only if you need them)"
+$readmeContent += "4. Note: Optional mods are treated as required by this server. Ensure you install them as well."
 $readmeContent += "5. Place optional mod JAR files in your `.minecraft/mods` folder"
 $readmeContent += ""
 $readmeContent += "> **Note:** All clients must have the mandatory mods. Optional mods are only needed by clients who want those specific features."
@@ -935,16 +986,13 @@ if ($UpdateConfig) {
         $defaultConfig | Out-File -FilePath $ConfigPath -Encoding UTF8
     }
     $allModNames = ($mandatoryMods + $softWhitelistedMods | ForEach-Object { $_.Name })
-    $softWhitelistHashes = $softWhitelistedMods | ForEach-Object { $_.Hash }
+    # Optional mods are treated as required; leave softWhitelist empty
+    $softWhitelistHashes = @()
     # Create MOTD whitelist with custom message
     $motdWhitelist = @($MotdMessage) + $allModNames
     # Create required and optional mod name arrays
-    $requiredModNames = @($ModpackMessage) + $mandatoryMods.Name
-    if ($softWhitelistedMods.Count -gt 0) {
-        $optionalModNames = @($MotdMessage) + $softWhitelistedMods.Name
-    } else {
-        $optionalModNames = @($MotdMessage, "None")
-    }
+    $requiredModNames = @($ModpackMessage) + $mandatoryMods.Name + $softWhitelistedMods.Name
+    $optionalModNames = @($MotdMessage, "None")
     # Create blocked mod names array
     if ($blockedMods.Count -gt 0) {
         $blockedModNames = @($BannedModsMessage) + $blockedMods.Name
