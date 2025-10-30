@@ -448,13 +448,17 @@ function Create-ModsZip {
         $tempDir = Join-Path $tempBase ([System.Guid]::NewGuid().ToString())
         New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
 
-        # Build folder structure: mods/, mods/optional/, shaderpacks/
+        # Build folder structure: mods/, mods/optional/, shaderpacks/, datapacks/, install/
         $tempModsDir = Join-Path $tempDir 'mods'
         $tempModsOptionalDir = Join-Path $tempModsDir 'optional'
         $tempShaderpacksDir = Join-Path $tempDir 'shaderpacks'
+        $tempDatapacksDir = Join-Path $tempDir 'datapacks'
+        $tempInstallDir = Join-Path $tempDir 'install'
         New-Item -ItemType Directory -Path $tempModsDir -Force | Out-Null
         New-Item -ItemType Directory -Path $tempModsOptionalDir -Force | Out-Null
         New-Item -ItemType Directory -Path $tempShaderpacksDir -Force | Out-Null
+        New-Item -ItemType Directory -Path $tempDatapacksDir -Force | Out-Null
+        New-Item -ItemType Directory -Path $tempInstallDir -Force | Out-Null
 
         # Copy all mandatory mods under mods/
         Write-Host "  Adding mandatory mods..." -ForegroundColor Gray
@@ -493,6 +497,40 @@ function Create-ModsZip {
                 Write-Host "    Added: $($sp.Name)" -ForegroundColor Gray
             }
         }
+
+        # Copy datapacks (if a sibling datapacks/ exists next to ModsPath)
+        $datapacksPath = Join-Path $modsParent 'datapacks'
+        if (Test-Path $datapacksPath) {
+            Write-Host "  Adding datapacks..." -ForegroundColor Gray
+            # Only include ZIP datapacks here; JAR datapacks are placed into mods during release build
+            $dpFiles = Get-ChildItem -Path $datapacksPath -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -in @('.zip') }
+            foreach ($dp in $dpFiles) {
+                Copy-Item $dp.FullName -Destination (Join-Path $tempDatapacksDir $dp.Name)
+                Write-Host "    Added: $($dp.Name)" -ForegroundColor Gray
+            }
+        }
+
+        # copy install files (if a sibling install/ exists next to ModsPath)
+        $installPath = Join-Path $modsParent 'install'
+        if (Test-Path $installPath) {
+            Write-Host "  Adding install files..." -ForegroundColor Gray
+            $installFiles = Get-ChildItem -Path $installPath -File -ErrorAction SilentlyContinue
+            foreach ($inst in $installFiles) {
+                Copy-Item $inst.FullName -Destination (Join-Path $tempInstallDir $inst.Name)
+                Write-Host "    Added: $($inst.Name)" -ForegroundColor Gray
+            }
+        }
+
+        # Warn if any ZIPs are present under mods/ (likely misclassification)
+        $modsZips = @()
+        $modsZips += (Get-ChildItem -Path $ModsPath -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -eq '.zip' })
+        $modsOptionalPath = Join-Path $ModsPath 'optional'
+        if (Test-Path $modsOptionalPath) {
+            $modsZips += (Get-ChildItem -Path $modsOptionalPath -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -eq '.zip' })
+        }
+        foreach ($z in $modsZips) {
+            Write-Host "  Warning: ZIP under mods detected (expected JAR) -> $($z.Name)" -ForegroundColor Yellow
+        }
         
         # Create README.md for the zip package
         $zipReadmeContent = @()
@@ -504,7 +542,7 @@ function Create-ModsZip {
         $zipReadmeContent += ""
         $zipReadmeContent += "## Package Contents"
         $zipReadmeContent += ""
-        $zipReadmeContent += "This package contains the modpack with expected folder structure (mods/, shaderpacks/):"
+        $zipReadmeContent += "This package contains the modpack with expected folder structure (mods/, shaderpacks/, datapacks/):"
         $zipReadmeContent += ""
         $zipReadmeContent += "### Mandatory Mods ($($MandatoryMods.Count))"
         foreach ($mod in $MandatoryMods) {
@@ -533,24 +571,12 @@ function Create-ModsZip {
         $zipReadmeContent += "1. Extract the contents of this zip."
         $zipReadmeContent += "2. Copy the 'mods' folder into your `.minecraft/` folder (preserving the 'optional' subfolder)."
         $zipReadmeContent += "3. If you use shaders, copy the 'shaderpacks' folder into your `.minecraft/` folder."
-        $zipReadmeContent += "4. Ensure you have the correct loader installed (e.g., Fabric) for your Minecraft version."
-        $zipReadmeContent += "5. Start Minecraft and join the server."
+        $zipReadmeContent += "4. If your server/client uses datapacks, copy the 'datapacks' folder into the world folder (or as per your server setup)."
+        $zipReadmeContent += "5. Ensure you have the correct loader installed (e.g., Fabric) for your Minecraft version."
+        $zipReadmeContent += "6. Start Minecraft and join the server."
         $zipReadmeContent += ""
         $zipReadmeContent += "## Package Verification"
         $zipReadmeContent += ""
-        $zipReadmeContent += "To verify the integrity of this package, use the following hash values:"
-        $zipReadmeContent += ""
-        $zipReadmeContent += "> **Note:** Hash values will be added after package creation"
-        $zipReadmeContent += ""
-        $zipReadmeContent += "### Hash Values"
-        $zipReadmeContent += "``````"
-        $zipReadmeContent += "MD5:    [TO BE CALCULATED]"
-        $zipReadmeContent += "SHA1:   [TO BE CALCULATED]"
-        $zipReadmeContent += "SHA256: [TO BE CALCULATED]"
-        $zipReadmeContent += "SHA512: [TO BE CALCULATED]"
-        $zipReadmeContent += "``````"
-        $zipReadmeContent += ""
-        $zipReadmeContent += "### Verification Commands"
         $zipReadmeContent += "``````powershell"
         $zipReadmeContent += "# Windows PowerShell"
         $zipReadmeContent += "Get-FileHash -Path `"$zipFileName`" -Algorithm MD5"
@@ -845,14 +871,14 @@ if ($blockedMods.Count -gt 0) {
 $readmeContent += ""
 $readmeContent += "## Server Updates"
 $readmeContent += ""
-$readmeContent += "1. Install Fabric Loader for Minecraft 1.21.5"
+$readmeContent += "1. Install Fabric Loader for your target Minecraft version"
 $readmeContent += "2. Download all mandatory mods listed above"
 $readmeContent += "3. Place all mandatory mod JAR files in your server's `mods` folder"
 $readmeContent += "4. Run the hash script to generate the combined hash for InertiaAntiCheat"
 $readmeContent += ""
 $readmeContent += "## Client Updates"
 $readmeContent += ""
-$readmeContent += "1. Install Fabric Loader for Minecraft 1.21.5"
+$readmeContent += "1. Install Fabric Loader for your target Minecraft version"
 $readmeContent += "2. Download all mandatory mods listed above"
 $readmeContent += "3. Place all mandatory mod JAR files in your `.minecraft/mods` folder"
 $readmeContent += "4. Copy optional mods (only if you need them)"
@@ -872,7 +898,7 @@ $readmeContent += "Run the script with `-UpdateConfig` to automatically update y
 $readmeContent += ""
 $readmeContent += "### Client Modpack Zip"
 $readmeContent += "The script automatically creates a zip file containing all mandatory and optional mods for easy distribution to clients."
-$readmeContent += "The zip file is named `modpack.zip` and contains all mod JAR files in the root directory."
+$readmeContent += "The zip file is named `modpack.zip` and contains the expected folder structure at the root: `mods/` (with `mods/optional/`) and `shaderpacks/`."
 $readmeContent += ""
 $readmeContent += "### Package Documentation"
 $readmeContent += "The zip package includes installation instructions and package information."
