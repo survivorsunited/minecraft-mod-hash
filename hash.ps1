@@ -11,7 +11,8 @@ param(
     [string]$ModpackMessage = "Requires modpack: ",
     [string]$BannedModsMessage = "Banned mods: ",
     [string]$ModsPath = "mods",
-    [string]$OutputPath = "output"
+    [string]$OutputPath = "output",
+    [string]$ModListPath = "modlist.csv"
 )
 
 # Ensure parent directory for config exists
@@ -273,6 +274,7 @@ function Extract-ModInfo {
         Contact = ""
         Homepage = ""
         License = ""
+        Category = ""
         JarFileName = [System.IO.Path]::GetFileName($JarPath)
         Environment = ""
     }
@@ -375,6 +377,51 @@ function Extract-ModInfo {
     }
     
     return $modInfo
+}
+
+# Function to look up Category from modlist.csv
+function Get-ModCategory {
+    param(
+        [hashtable]$ModInfo,
+        [string]$ModListPath
+    )
+    
+    if (-not (Test-Path $ModListPath)) {
+        return ""
+    }
+    
+    try {
+        $modList = Import-Csv -Path $ModListPath
+        if ($modList) {
+            # Try to match by ID first (most reliable)
+            if ($ModInfo.Id) {
+                $match = $modList | Where-Object { $_.ID -eq $ModInfo.Id }
+                if ($match -and $match.Category) {
+                    return $match.Category
+                }
+            }
+            
+            # Fallback: try to match by Name
+            if ($ModInfo.Name) {
+                $match = $modList | Where-Object { $_.Name -eq $ModInfo.Name }
+                if ($match -and $match.Category) {
+                    return $match.Category
+                }
+            }
+            
+            # Fallback: try to match by Jar filename
+            if ($ModInfo.JarFileName) {
+                $match = $modList | Where-Object { $_.Jar -eq $ModInfo.JarFileName }
+                if ($match -and $match.Category) {
+                    return $match.Category
+                }
+            }
+        }
+    } catch {
+        # Silently fail if modlist.csv can't be read
+    }
+    
+    return ""
 }
 
 # Function to create signature files for a file
@@ -728,6 +775,8 @@ $serverOnlyMandatoryMods = @()
 $mandatoryJars = Get-ChildItem -Path $ModsPath -Filter "*.jar" | Sort-Object Name
 foreach ($jar in $mandatoryJars) {
     $modInfo = Extract-ModInfo -JarPath $jar.FullName
+    # Look up Category from modlist.csv
+    $modInfo.Category = Get-ModCategory -ModInfo $modInfo -ModListPath $ModListPath
     if ($modInfo.Environment -eq "server") {
         $serverOnlyMandatoryMods += $modInfo
     } else {
@@ -753,6 +802,8 @@ if (Test-Path $optionalModsPath) {
     $optionalJars = Get-ChildItem -Path $optionalModsPath -Filter "*.jar" | Sort-Object Name
     foreach ($jar in $optionalJars) {
         $modInfo = Extract-ModInfo -JarPath $jar.FullName
+        # Look up Category from modlist.csv
+        $modInfo.Category = Get-ModCategory -ModInfo $modInfo -ModListPath $ModListPath
         if ($modInfo.Environment -eq "server") {
             $serverOnlyOptionalMods += $modInfo
         } else {
@@ -779,6 +830,8 @@ if (Test-Path $blockModsPath) {
     $blockJars = Get-ChildItem -Path $blockModsPath -Filter "*.jar" | Sort-Object Name
     foreach ($jar in $blockJars) {
         $modInfo = Extract-ModInfo -JarPath $jar.FullName
+        # Look up Category from modlist.csv
+        $modInfo.Category = Get-ModCategory -ModInfo $modInfo -ModListPath $ModListPath
         if ($modInfo.Environment -eq "server") {
             $serverOnlyBlockedMods += $modInfo
         } else {
@@ -866,38 +919,40 @@ $readmeContent += "## Included Mods"
 $readmeContent += ""
 $readmeContent += "## Mandatory Mods"
 $readmeContent += ""
-$readmeContent += "| Name | ID | Version | Description | License | Homepage | Contact |"
-$readmeContent += "|------|----|---------|-------------|---------|----------|---------|"
+$readmeContent += "| Name | ID | Version | Description | Category | License | Homepage | Contact |"
+$readmeContent += "|------|----|---------|-------------|----------|---------|----------|---------|"
 foreach ($mod in $mandatoryMods) {
     $name = $mod.Name -replace '\|', '\|'
     $id = $mod.Id -replace '\|', '\|'
     $version = $mod.Version -replace '\|', '\|'
-    $description = ($mod.Description -replace '\|', '\|' -replace "`r?`n", " ").Substring(0, [Math]::Min(50, $mod.Description.Length))
-    if ($mod.Description.Length -gt 50) { $description += "..." }
+    $description = if ($mod.Description) { ($mod.Description -replace '\|', '\|' -replace "`r?`n", " ").Substring(0, [Math]::Min(50, $mod.Description.Length)) } else { "" }
+    if ($mod.Description -and $mod.Description.Length -gt 50) { $description += "..." }
+    $category = if ($mod.Category) { $mod.Category -replace '\|', '\|' } else { "" }
     $license = $mod.License -replace '\|', '\|'
     $homepage = $mod.Homepage -replace '\|', '\|'
     $contact = $mod.Contact -replace '\|', '\|'
     
-    $readmeContent += "| $name | $id | $version | $description | $license | $homepage | $contact |"
+    $readmeContent += "| $name | $id | $version | $description | $category | $license | $homepage | $contact |"
 }
 
 if ($softWhitelistedMods.Count -gt 0) {
     $readmeContent += ""
     $readmeContent += "## Optional Mods"
     $readmeContent += ""
-    $readmeContent += "| Name | ID | Version | Description | License | Homepage | Contact |"
-    $readmeContent += "|------|----|---------|-------------|---------|----------|---------|"
+    $readmeContent += "| Name | ID | Version | Description | Category | License | Homepage | Contact |"
+    $readmeContent += "|------|----|---------|-------------|----------|---------|----------|---------|"
     foreach ($mod in $softWhitelistedMods) {
         $name = $mod.Name -replace '\|', '\|'
         $id = $mod.Id -replace '\|', '\|'
         $version = $mod.Version -replace '\|', '\|'
-        $description = ($mod.Description -replace '\|', '\|' -replace "`r?`n", " ").Substring(0, [Math]::Min(50, $mod.Description.Length))
-        if ($mod.Description.Length -gt 50) { $description += "..." }
+        $description = if ($mod.Description) { ($mod.Description -replace '\|', '\|' -replace "`r?`n", " ").Substring(0, [Math]::Min(50, $mod.Description.Length)) } else { "" }
+        if ($mod.Description -and $mod.Description.Length -gt 50) { $description += "..." }
+        $category = if ($mod.Category) { $mod.Category -replace '\|', '\|' } else { "" }
         $license = $mod.License -replace '\|', '\|'
         $homepage = $mod.Homepage -replace '\|', '\|'
         $contact = $mod.Contact -replace '\|', '\|'
         
-        $readmeContent += "| $name | $id | $version | $description | $license | $homepage | $contact |"
+        $readmeContent += "| $name | $id | $version | $description | $category | $license | $homepage | $contact |"
     }
 }
 
@@ -905,19 +960,20 @@ if ($blockedMods.Count -gt 0) {
     $readmeContent += ""
     $readmeContent += "## Blocked Mods"
     $readmeContent += ""
-    $readmeContent += "| Name | ID | Version | Description | License | Homepage | Contact |"
-    $readmeContent += "|------|----|---------|-------------|---------|----------|---------|"
+    $readmeContent += "| Name | ID | Version | Description | Category | License | Homepage | Contact |"
+    $readmeContent += "|------|----|---------|-------------|----------|---------|----------|---------|"
     foreach ($mod in $blockedMods) {
         $name = $mod.Name -replace '\|', '\|'
         $id = $mod.Id -replace '\|', '\|'
         $version = $mod.Version -replace '\|', '\|'
-        $description = ($mod.Description -replace '\|', '\|' -replace "`r?`n", " ").Substring(0, [Math]::Min(50, $mod.Description.Length))
-        if ($mod.Description.Length -gt 50) { $description += "..." }
+        $description = if ($mod.Description) { ($mod.Description -replace '\|', '\|' -replace "`r?`n", " ").Substring(0, [Math]::Min(50, $mod.Description.Length)) } else { "" }
+        if ($mod.Description -and $mod.Description.Length -gt 50) { $description += "..." }
+        $category = if ($mod.Category) { $mod.Category -replace '\|', '\|' } else { "" }
         $license = $mod.License -replace '\|', '\|'
         $homepage = $mod.Homepage -replace '\|', '\|'
         $contact = $mod.Contact -replace '\|', '\|'
         
-        $readmeContent += "| $name | $id | $version | $description | $license | $homepage | $contact |"
+        $readmeContent += "| $name | $id | $version | $description | $category | $license | $homepage | $contact |"
     }
 }
 
