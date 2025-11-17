@@ -627,35 +627,43 @@ function Create-ModsZip {
     $zipReadmeContent += "This package contains the modpack with expected folder structure (mods/, mods/server/, mods/optional/, shaderpacks/, datapacks/, install/)."
         $zipReadmeContent += "If available, the Minecraft server jar and Fabric server launcher are included at the ZIP root."
         $zipReadmeContent += ""
-        $zipReadmeContent += "### Mandatory Mods ($($MandatoryMods.Count))"
+        # Combine all mods into a single list
+        $allMods = @()
         foreach ($mod in $MandatoryMods) {
-            $zipReadmeContent += "- **$($mod.Name)** v$($mod.Version) - $($mod.Description)"
+            $allMods += [PSCustomObject]@{ Mod = $mod; Type = "Mandatory" }
+        }
+        foreach ($mod in $SoftWhitelistedMods) {
+            $allMods += [PSCustomObject]@{ Mod = $mod; Type = "Optional" }
+        }
+        foreach ($mod in $blockedMods) {
+            $allMods += [PSCustomObject]@{ Mod = $mod; Type = "Blocked" }
         }
         
-        if ($SoftWhitelistedMods.Count -gt 0) {
-            $zipReadmeContent += ""
-            $zipReadmeContent += "### Optional Mods ($($SoftWhitelistedMods.Count))"
-            foreach ($mod in $SoftWhitelistedMods) {
-                $zipReadmeContent += "- **$($mod.Name)** v$($mod.Version) - $($mod.Description)"
-            }
-        }
-
-        if ($blockedMods.Count -gt 0) {
-            $zipReadmeContent += ""
-            $zipReadmeContent += "### Blocked Mods ($($blockedMods.Count))"
-            foreach ($mod in $blockedMods) {
-                $zipReadmeContent += "- **$($mod.Name)** v$($mod.Version) - $($mod.Description)"
-            }
-        }
-
-        # List server-only mods if present
+        # Add server-only mods to the combined list
         if (Test-Path $modsServerPath) {
             $srvList = Get-ChildItem -Path $modsServerPath -Filter '*.jar' -File -ErrorAction SilentlyContinue
-            if ($srvList.Count -gt 0) {
-                $zipReadmeContent += ""
-                $zipReadmeContent += "### Server-only Mods ($($srvList.Count))"
-                foreach ($f in $srvList) { $zipReadmeContent += "- $($f.Name)" }
+            foreach ($srvJar in $srvList) {
+                $serverModInfo = Extract-ModInfo -JarPath $srvJar.FullName
+                # Look up Category from modlist.csv
+                $serverModInfo.Category = Get-ModCategory -ModInfo $serverModInfo -ModListPath $ModListPath
+                $allMods += [PSCustomObject]@{ Mod = $serverModInfo; Type = "Server" }
             }
+        }
+        
+        $totalMods = $allMods.Count
+        $zipReadmeContent += "### All Mods ($totalMods)"
+        $zipReadmeContent += ""
+        $zipReadmeContent += "| Name | ID | Version | Description | Category | Type |"
+        $zipReadmeContent += "|------|----|---------|-------------|----------|------|"
+        foreach ($item in $allMods) {
+            $mod = $item.Mod
+            $name = $mod.Name
+            $id = $mod.Id
+            $version = $mod.Version
+            $desc = if ($mod.Description) { ($mod.Description -replace "`r?`n", " ") } else { "" }
+            $cat = if ($mod.Category) { $mod.Category } else { "" }
+            $type = $item.Type
+            $zipReadmeContent += "| $name | $id | $version | $desc | $cat | $type |"
         }
         
         $zipReadmeContent += ""
@@ -915,66 +923,45 @@ $readmeContent += "- **Optional Mods:** $($softWhitelistedMods.Count)"
 $readmeContent += "- **Blocked Mods:** $($blockedMods.Count)"
 $readmeContent += "- **Combined Hash:** $combinedHash"
 $readmeContent += ""
-$readmeContent += "## Included Mods"
-$readmeContent += ""
-$readmeContent += "## Mandatory Mods"
-$readmeContent += ""
-$readmeContent += "| Name | ID | Version | Description | Category | License | Homepage | Contact |"
-$readmeContent += "|------|----|---------|-------------|----------|---------|----------|---------|"
+# Combine all mods into a single list
+$allModsForReadme = @()
 foreach ($mod in $mandatoryMods) {
+    $allModsForReadme += [PSCustomObject]@{ Mod = $mod; Type = "Mandatory" }
+}
+foreach ($mod in $softWhitelistedMods) {
+    $allModsForReadme += [PSCustomObject]@{ Mod = $mod; Type = "Optional" }
+}
+foreach ($mod in $blockedMods) {
+    $allModsForReadme += [PSCustomObject]@{ Mod = $mod; Type = "Blocked" }
+}
+
+# Add server-only mods to the combined list
+$modsServerPath = Join-Path $ModsPath 'server'
+if (Test-Path $modsServerPath) {
+    $srvList = Get-ChildItem -Path $modsServerPath -Filter '*.jar' -File -ErrorAction SilentlyContinue
+    foreach ($srvJar in $srvList) {
+        $serverModInfo = Extract-ModInfo -JarPath $srvJar.FullName
+        # Look up Category from modlist.csv
+        $serverModInfo.Category = Get-ModCategory -ModInfo $serverModInfo -ModListPath $ModListPath
+        $allModsForReadme += [PSCustomObject]@{ Mod = $serverModInfo; Type = "Server" }
+    }
+}
+
+$totalModsForReadme = $allModsForReadme.Count
+$readmeContent += "## Mods Table ($totalModsForReadme)"
+$readmeContent += ""
+$readmeContent += "| Name | ID | Version | Description | Category | Type |"
+$readmeContent += "|------|----|---------|-------------|----------|------|"
+foreach ($item in $allModsForReadme) {
+    $mod = $item.Mod
     $name = $mod.Name -replace '\|', '\|'
     $id = $mod.Id -replace '\|', '\|'
     $version = $mod.Version -replace '\|', '\|'
-    $description = if ($mod.Description) { ($mod.Description -replace '\|', '\|' -replace "`r?`n", " ").Substring(0, [Math]::Min(50, $mod.Description.Length)) } else { "" }
-    if ($mod.Description -and $mod.Description.Length -gt 50) { $description += "..." }
+    $description = if ($mod.Description) { ($mod.Description -replace '\|', '\|' -replace "`r?`n", " ") } else { "" }
     $category = if ($mod.Category) { $mod.Category -replace '\|', '\|' } else { "" }
-    $license = $mod.License -replace '\|', '\|'
-    $homepage = $mod.Homepage -replace '\|', '\|'
-    $contact = $mod.Contact -replace '\|', '\|'
+    $type = $item.Type
     
-    $readmeContent += "| $name | $id | $version | $description | $category | $license | $homepage | $contact |"
-}
-
-if ($softWhitelistedMods.Count -gt 0) {
-    $readmeContent += ""
-    $readmeContent += "## Optional Mods"
-    $readmeContent += ""
-    $readmeContent += "| Name | ID | Version | Description | Category | License | Homepage | Contact |"
-    $readmeContent += "|------|----|---------|-------------|----------|---------|----------|---------|"
-    foreach ($mod in $softWhitelistedMods) {
-        $name = $mod.Name -replace '\|', '\|'
-        $id = $mod.Id -replace '\|', '\|'
-        $version = $mod.Version -replace '\|', '\|'
-        $description = if ($mod.Description) { ($mod.Description -replace '\|', '\|' -replace "`r?`n", " ").Substring(0, [Math]::Min(50, $mod.Description.Length)) } else { "" }
-        if ($mod.Description -and $mod.Description.Length -gt 50) { $description += "..." }
-        $category = if ($mod.Category) { $mod.Category -replace '\|', '\|' } else { "" }
-        $license = $mod.License -replace '\|', '\|'
-        $homepage = $mod.Homepage -replace '\|', '\|'
-        $contact = $mod.Contact -replace '\|', '\|'
-        
-        $readmeContent += "| $name | $id | $version | $description | $category | $license | $homepage | $contact |"
-    }
-}
-
-if ($blockedMods.Count -gt 0) {
-    $readmeContent += ""
-    $readmeContent += "## Blocked Mods"
-    $readmeContent += ""
-    $readmeContent += "| Name | ID | Version | Description | Category | License | Homepage | Contact |"
-    $readmeContent += "|------|----|---------|-------------|----------|---------|----------|---------|"
-    foreach ($mod in $blockedMods) {
-        $name = $mod.Name -replace '\|', '\|'
-        $id = $mod.Id -replace '\|', '\|'
-        $version = $mod.Version -replace '\|', '\|'
-        $description = if ($mod.Description) { ($mod.Description -replace '\|', '\|' -replace "`r?`n", " ").Substring(0, [Math]::Min(50, $mod.Description.Length)) } else { "" }
-        if ($mod.Description -and $mod.Description.Length -gt 50) { $description += "..." }
-        $category = if ($mod.Category) { $mod.Category -replace '\|', '\|' } else { "" }
-        $license = $mod.License -replace '\|', '\|'
-        $homepage = $mod.Homepage -replace '\|', '\|'
-        $contact = $mod.Contact -replace '\|', '\|'
-        
-        $readmeContent += "| $name | $id | $version | $description | $category | $license | $homepage | $contact |"
-    }
+    $readmeContent += "| $name | $id | $version | $description | $category | $type |"
 }
 
 $readmeContent += ""
