@@ -6,7 +6,8 @@
 param(
     [switch]$UpdateConfig,
     [switch]$CreateZip,
-    [string]$ConfigPath = "config\InertiaAntiCheat\InertiaAntiCheat.toml",
+    [string]$SourceConfig = "config\InertiaAntiCheat\InertiaAntiCheat.toml",
+    [string]$OutputConfig = "config\InertiaAntiCheat\InertiaAntiCheat.toml",
     [string]$MotdMessage = "Whitelisted mods:",
     [string]$ModpackMessage = "Requires modpack: ",
     [string]$BannedModsMessage = "Banned mods: ",
@@ -15,10 +16,30 @@ param(
     [string]$ModListPath = "modlist.csv"
 )
 
-# Ensure parent directory for config exists
-$configDir = Split-Path $ConfigPath -Parent
-if (-not (Test-Path $configDir)) {
-    New-Item -ItemType Directory -Path $configDir -Force | Out-Null
+# Get script directory for resolving relative paths
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+
+# Resolve OutputPath to absolute path first (if relative, resolve from current working directory)
+if (-not [System.IO.Path]::IsPathRooted($OutputPath)) {
+    $OutputPath = Resolve-Path -Path $OutputPath -ErrorAction SilentlyContinue
+    if (-not $OutputPath) {
+        $OutputPath = Join-Path (Get-Location) $OutputPath
+    }
+}
+
+# Resolve SourceConfig relative to script directory if it's a relative path (default behavior)
+# Note: We don't create source config - we only use it if it exists
+if (-not [System.IO.Path]::IsPathRooted($SourceConfig)) {
+    $SourceConfig = Join-Path $scriptDir $SourceConfig
+}
+
+# Build output config path: OutputPath + OutputConfig (which includes full path)
+$ConfigPath = Join-Path $OutputPath $OutputConfig
+
+# Ensure output config directory exists
+$outputConfigDir = Split-Path $ConfigPath -Parent
+if (-not (Test-Path $outputConfigDir)) {
+    New-Item -ItemType Directory -Path $outputConfigDir -Force | Out-Null
 }
 
 # Function to calculate MD5 hash of a file
@@ -1009,27 +1030,8 @@ $readmeContent | Out-File -FilePath (Join-Path $actualOutputPath $readmeFileName
 # Update IAC config if requested
 if ($UpdateConfig) {
     Write-Host "`nUpdating InertiaAntiCheat config..." -ForegroundColor Yellow
-    Write-Host "Using config from $ConfigPath..." -ForegroundColor Yellow
-    $iacCopyName = Get-ChildItem -Path $ConfigPath -Name
-    $iacCopyPath = Join-Path $OutputPath $iacCopyName
-    Write-Host "Copying config to $iacCopyPath..." -ForegroundColor Yellow
-
-    # Create minimal config if it does not exist
-    if (-not (Test-Path $ConfigPath)) {
-        $defaultConfig = @(
-            "[validation.group]",
-            "hash = []",
-            "softWhitelist = []",
-            "",
-            "[validation.individual]",
-            "blacklist = []",
-            "",
-            "[motd]",
-            "whitelist = []",
-            "blacklist = []"
-        )
-        $defaultConfig | Out-File -FilePath $ConfigPath -Encoding UTF8
-    }
+    Write-Host "Output config: $ConfigPath" -ForegroundColor Yellow
+    
     $allModNames = ($mandatoryMods + $softWhitelistedMods | ForEach-Object { $_.Name })
     # Optional mods are treated as required; leave softWhitelist empty
     $softWhitelistHashes = @()
@@ -1045,9 +1047,29 @@ if ($UpdateConfig) {
         $blockedModNames = @($BannedModsMessage, "None")
     }
     
-    # Copy the original config to the output file, then update only the output file
-    Get-Content -Path $ConfigPath | Set-Content -Path $iacCopyPath
-    Update-IACConfig -ConfigPath $iacCopyPath -CombinedHash $combinedHash -SoftWhitelist $softWhitelistHashes -AllModNames $motdWhitelist -RequiredModNames $requiredModNames -OptionalModNames $optionalModNames -BlockedMods $blockedMods -BlockedModNames $blockedModNames -MotdMessage $MotdMessage -ModpackMessage $ModpackMessage -BannedModsMessage $BannedModsMessage
+    # Copy source config to output if it exists, otherwise create new one in output
+    if (Test-Path $SourceConfig) {
+        Write-Host "Copying source config from $SourceConfig to output..." -ForegroundColor Yellow
+        Get-Content -Path $SourceConfig | Set-Content -Path $ConfigPath
+    } else {
+        Write-Host "Creating new IAC config at $ConfigPath..." -ForegroundColor Yellow
+        $defaultConfig = @(
+            "[validation.group]",
+            "hash = []",
+            "softWhitelist = []",
+            "",
+            "[validation.individual]",
+            "blacklist = []",
+            "",
+            "[motd]",
+            "whitelist = []",
+            "blacklist = []"
+        )
+        $defaultConfig | Out-File -FilePath $ConfigPath -Encoding UTF8
+    }
+    
+    # Update the output config file
+    Update-IACConfig -ConfigPath $ConfigPath -CombinedHash $combinedHash -SoftWhitelist $softWhitelistHashes -AllModNames $motdWhitelist -RequiredModNames $requiredModNames -OptionalModNames $optionalModNames -BlockedMods $blockedMods -BlockedModNames $blockedModNames -MotdMessage $MotdMessage -ModpackMessage $ModpackMessage -BannedModsMessage $BannedModsMessage
 }
 
 # Create zip file with all mods (only if CreateZip flag is set)
