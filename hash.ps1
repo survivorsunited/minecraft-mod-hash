@@ -517,17 +517,16 @@ function Create-ModsZip {
         $tempDir = Join-Path $tempBase ([System.Guid]::NewGuid().ToString())
         New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
 
-        # Build folder structure: mods/, mods/optional/, mods/server/, shaderpacks/, datapacks/, install/, config/InertiaAntiCheat/
+        # Build folder structure: mods/, mods/optional/, shaderpacks/, datapacks/, install/, config/InertiaAntiCheat/
+        # Note: Server mods are now in main mods/ folder, not mods/server/ subfolder
         $tempModsDir = Join-Path $tempDir 'mods'
         $tempModsOptionalDir = Join-Path $tempModsDir 'optional'
-        $tempModsServerDir = Join-Path $tempModsDir 'server'
         $tempShaderpacksDir = Join-Path $tempDir 'shaderpacks'
         $tempDatapacksDir = Join-Path $tempDir 'datapacks'
         $tempInstallDir = Join-Path $tempDir 'install'
         $tempIacConfigDir = Join-Path $tempDir 'config\InertiaAntiCheat'
         New-Item -ItemType Directory -Path $tempModsDir -Force | Out-Null
         New-Item -ItemType Directory -Path $tempModsOptionalDir -Force | Out-Null
-        New-Item -ItemType Directory -Path $tempModsServerDir -Force | Out-Null
         New-Item -ItemType Directory -Path $tempShaderpacksDir -Force | Out-Null
         New-Item -ItemType Directory -Path $tempDatapacksDir -Force | Out-Null
         New-Item -ItemType Directory -Path $tempInstallDir -Force | Out-Null
@@ -559,16 +558,8 @@ function Create-ModsZip {
             }
         }
 
-        # Copy server-only mods under mods/server/
-        $modsServerPath = Join-Path $ModsPath 'server'
-        if (Test-Path $modsServerPath) {
-            Write-Host "  Adding server-only mods..." -ForegroundColor Gray
-            $serverJars = Get-ChildItem -Path $modsServerPath -Filter '*.jar' -File -ErrorAction SilentlyContinue
-            foreach ($sj in $serverJars) {
-                Copy-Item -Path $sj.FullName -Destination (Join-Path $tempModsServerDir $sj.Name)
-                Write-Host "    Added: $($sj.Name)" -ForegroundColor Gray
-            }
-        }
+        # Server-only mods are now in main mods/ folder (not mods/server/ subfolder)
+        # They are already included when copying mandatory mods above
 
         # Copy shaderpacks (if a sibling shaderpacks/ exists next to ModsPath)
         $modsParent = Split-Path -Parent $ModsPath
@@ -645,7 +636,7 @@ function Create-ModsZip {
         $zipReadmeContent += ""
         $zipReadmeContent += "## Package Contents"
         $zipReadmeContent += ""
-    $zipReadmeContent += "This package contains the modpack with expected folder structure (mods/, mods/server/, mods/optional/, shaderpacks/, datapacks/, install/)."
+    $zipReadmeContent += "This package contains the modpack with expected folder structure (mods/, mods/optional/, shaderpacks/, datapacks/, install/)."
         $zipReadmeContent += "If available, the Minecraft server jar and Fabric server launcher are included at the ZIP root."
         $zipReadmeContent += ""
         # Combine all mods into a single list
@@ -660,16 +651,8 @@ function Create-ModsZip {
             $allMods += [PSCustomObject]@{ Mod = $mod; Type = "Blocked" }
         }
         
-        # Add server-only mods to the combined list
-        if (Test-Path $modsServerPath) {
-            $srvList = Get-ChildItem -Path $modsServerPath -Filter '*.jar' -File -ErrorAction SilentlyContinue
-            foreach ($srvJar in $srvList) {
-                $serverModInfo = Extract-ModInfo -JarPath $srvJar.FullName
-                # Look up Category from modlist.csv
-                $serverModInfo.Category = Get-ModCategory -ModInfo $serverModInfo -ModListPath $ModListPath
-                $allMods += [PSCustomObject]@{ Mod = $serverModInfo; Type = "Server" }
-            }
-        }
+        # Server-only mods are now in main mods/ folder and included in MandatoryMods list
+        # No need to add them separately - they're already in the combined list
         
         $totalMods = $allMods.Count
         $zipReadmeContent += "### All Mods ($totalMods)"
